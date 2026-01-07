@@ -49,9 +49,12 @@ import java.io.File
 
 class MainActivity : ComponentActivity() {
 
+    private val currentIntent = mutableStateOf<Intent?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        currentIntent.value = intent
         setContent {
             QuickyShoppyTheme {
                 Surface(
@@ -59,7 +62,7 @@ class MainActivity : ComponentActivity() {
                     color = MaterialTheme.colorScheme.background
                 ) {
                     QuickyShoppyNavigation(
-                        intent = intent,
+                        intent = currentIntent.value,
                         checkClipboard = { checkClipboardForImport() }
                     )
                 }
@@ -70,6 +73,7 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        currentIntent.value = intent
     }
 
     private fun checkClipboardForImport(): ImportData? {
