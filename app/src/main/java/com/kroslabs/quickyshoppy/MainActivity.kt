@@ -140,8 +140,11 @@ fun QuickyShoppyNavigation(
         }
     }
 
-    // Handle deep links and clipboard
+    // Handle deep links, shared text, and clipboard
     LaunchedEffect(intent) {
+        var handled = false
+
+        // Handle ACTION_VIEW (deep links)
         val data = intent?.data
         if (data != null && data.scheme == "quickyshoppy" && data.host == "import") {
             val base64Data = data.getQueryParameter("data")
@@ -150,12 +153,36 @@ fun QuickyShoppyNavigation(
                     val json = String(Base64.decode(base64Data, Base64.DEFAULT))
                     val importData = Gson().fromJson(json, ImportData::class.java)
                     viewModel.setImportItems(importData.items)
+                    handled = true
                 } catch (e: Exception) {
                     Toast.makeText(context, "Invalid import data", Toast.LENGTH_SHORT).show()
                 }
             }
-        } else {
-            // Check clipboard for import data
+        }
+
+        // Handle ACTION_SEND (shared text)
+        if (!handled && intent?.action == Intent.ACTION_SEND && intent.type == "text/plain") {
+            val sharedText = intent.getStringExtra(Intent.EXTRA_TEXT)
+            if (sharedText != null) {
+                // Look for quickyshoppy:// URL in the shared text
+                val regex = Regex("quickyshoppy://import\\?data=([A-Za-z0-9+/=]+)")
+                val match = regex.find(sharedText)
+                if (match != null) {
+                    val base64Data = match.groupValues[1]
+                    try {
+                        val json = String(Base64.decode(base64Data, Base64.DEFAULT))
+                        val importData = Gson().fromJson(json, ImportData::class.java)
+                        viewModel.setImportItems(importData.items)
+                        handled = true
+                    } catch (e: Exception) {
+                        Toast.makeText(context, "Invalid import data", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
+
+        // Check clipboard for import data if nothing else handled
+        if (!handled) {
             val clipboardData = checkClipboard()
             if (clipboardData != null) {
                 viewModel.setImportItems(clipboardData.items)
