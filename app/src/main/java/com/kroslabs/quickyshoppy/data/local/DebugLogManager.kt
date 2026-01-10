@@ -8,6 +8,7 @@ import java.util.Date
 import java.util.Locale
 
 data class DebugLogEntry(
+    val id: Long = System.nanoTime(),
     val timestamp: Long = System.currentTimeMillis(),
     val tag: String,
     val message: String,

@@ -132,7 +132,7 @@ fun DebugLogsScreen(
                 contentPadding = PaddingValues(8.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                items(logs, key = { it.timestamp }) { entry ->
+                items(logs, key = { it.id }) { entry ->
                     LogEntryCard(entry = entry)
                 }
             }
