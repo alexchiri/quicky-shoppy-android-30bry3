@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.kroslabs.quickyshoppy.data.local.AppDatabase
+import com.kroslabs.quickyshoppy.data.local.DebugLogManager
 import com.kroslabs.quickyshoppy.data.local.SettingsDataStore
 import com.kroslabs.quickyshoppy.data.remote.ClaudeRepository
 import com.kroslabs.quickyshoppy.data.repository.ShoppingRepository
@@ -51,7 +52,9 @@ class ShoppingViewModel(application: Application) : AndroidViewModel(application
     fun addItem(name: String, quantity: String? = null) {
         if (name.isBlank()) return
         viewModelScope.launch {
+            DebugLogManager.info(TAG, "Adding new item: '$name' ${quantity?.let { "(qty: $it)" } ?: ""}")
             val itemId = repository.addItem(name.trim(), quantity?.trim())
+            DebugLogManager.debug(TAG, "Item added to database with ID: $itemId")
             categorizeItem(itemId, name)
         }
     }
@@ -59,29 +62,39 @@ class ShoppingViewModel(application: Application) : AndroidViewModel(application
     private fun categorizeItem(itemId: Long, itemName: String) {
         viewModelScope.launch {
             val currentApiKey = apiKey.value
-            if (currentApiKey.isNullOrBlank()) return@launch
+            if (currentApiKey.isNullOrBlank()) {
+                DebugLogManager.warning(TAG, "Skipping AI categorization for '$itemName' - No API key configured")
+                return@launch
+            }
 
+            DebugLogManager.info(TAG, "Requesting AI categorization for item ID $itemId: '$itemName'")
             val result = claudeRepository.categorizeItem(currentApiKey, itemName)
             result.onSuccess { category ->
                 repository.updateItemCategory(itemId, category)
+                DebugLogManager.info(TAG, "Item '$itemName' moved to category: ${category.displayName}")
+            }.onFailure { e ->
+                DebugLogManager.error(TAG, "Categorization failed for '$itemName': ${e.message}")
             }
         }
     }
 
     fun toggleItemCompletion(itemId: Long) {
         viewModelScope.launch {
+            DebugLogManager.debug(TAG, "Toggling completion for item ID: $itemId")
             repository.toggleItemCompletion(itemId)
         }
     }
 
     fun deleteItem(itemId: Long) {
         viewModelScope.launch {
+            DebugLogManager.info(TAG, "Deleting item ID: $itemId")
             repository.deleteItem(itemId)
         }
     }
 
     fun moveItemToCategory(itemId: Long, category: Category) {
         viewModelScope.launch {
+            DebugLogManager.info(TAG, "Manually moving item ID $itemId to category: ${category.displayName}")
             repository.updateItemCategory(itemId, category)
         }
     }
@@ -114,18 +127,22 @@ class ShoppingViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             val currentApiKey = apiKey.value
             if (currentApiKey.isNullOrBlank()) {
+                DebugLogManager.error(TAG, "Recipe analysis failed - No API key configured")
                 _uiState.value = _uiState.value.copy(error = "Please set your Claude API key in settings")
                 return@launch
             }
 
+            DebugLogManager.info(TAG, "Starting recipe photo analysis...")
             _uiState.value = _uiState.value.copy(analyzingRecipe = true, error = null)
             val result = claudeRepository.analyzeRecipePhoto(currentApiKey, imageBytes)
             result.onSuccess { ingredients ->
+                DebugLogManager.success(TAG, "Recipe analysis complete - Found ${ingredients.size} ingredients")
                 _uiState.value = _uiState.value.copy(
                     analyzingRecipe = false,
                     ingredients = ingredients
                 )
             }.onFailure { e ->
+                DebugLogManager.error(TAG, "Recipe analysis failed: ${e.message}")
                 _uiState.value = _uiState.value.copy(
                     analyzingRecipe = false,
                     error = "Failed to analyze recipe: ${e.message}"
@@ -150,10 +167,14 @@ class ShoppingViewModel(application: Application) : AndroidViewModel(application
     fun addSelectedIngredients() {
         viewModelScope.launch {
             val ingredients = _uiState.value.ingredients ?: return@launch
-            ingredients.filter { it.isSelected }.forEach { ingredient ->
+            val selectedIngredients = ingredients.filter { it.isSelected }
+            DebugLogManager.info(TAG, "Adding ${selectedIngredients.size} selected ingredients from recipe")
+            selectedIngredients.forEach { ingredient ->
+                DebugLogManager.debug(TAG, "Adding ingredient: '${ingredient.name}' ${ingredient.quantity?.let { "($it)" } ?: ""}")
                 val itemId = repository.addItem(ingredient.name, ingredient.quantity)
                 categorizeItem(itemId, ingredient.name)
             }
+            DebugLogManager.success(TAG, "Successfully added ${selectedIngredients.size} ingredients")
             _uiState.value = _uiState.value.copy(ingredients = null)
         }
     }
@@ -163,6 +184,10 @@ class ShoppingViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun setImportItems(items: List<ImportItem>) {
+        DebugLogManager.info(TAG, "Import data received - ${items.size} items to import")
+        items.forEachIndexed { index, item ->
+            DebugLogManager.debug(TAG, "Import item $index: '${item.name}' ${item.quantity?.let { "(qty: $it)" } ?: ""} ${item.category?.let { "[cat: $it]" } ?: "[no category]"}")
+        }
         _uiState.value = _uiState.value.copy(importItems = items)
     }
 
@@ -182,8 +207,11 @@ class ShoppingViewModel(application: Application) : AndroidViewModel(application
     fun addSelectedImportItems() {
         viewModelScope.launch {
             val items = _uiState.value.importItems ?: return@launch
-            items.filter { it.isSelected }.forEach { item ->
+            val selectedItems = items.filter { it.isSelected }
+            DebugLogManager.info(TAG, "Importing ${selectedItems.size} selected items")
+            selectedItems.forEach { item ->
                 val category = item.category?.let { Category.fromDisplayName(it) } ?: Category.UNCATEGORISED
+                DebugLogManager.debug(TAG, "Importing: '${item.name}' -> category: ${category.displayName}")
                 val itemId = repository.addItemWithDetails(
                     name = item.name,
                     quantity = item.quantity,
@@ -192,9 +220,13 @@ class ShoppingViewModel(application: Application) : AndroidViewModel(application
                 )
                 // Only categorize if no category was provided
                 if (item.category == null) {
+                    DebugLogManager.debug(TAG, "Item '${item.name}' has no category - requesting AI categorization")
                     categorizeItem(itemId, item.name)
+                } else {
+                    DebugLogManager.debug(TAG, "Item '${item.name}' imported with predefined category: ${category.displayName}")
                 }
             }
+            DebugLogManager.success(TAG, "Successfully imported ${selectedItems.size} items")
             _uiState.value = _uiState.value.copy(importItems = null)
         }
     }
@@ -209,14 +241,20 @@ class ShoppingViewModel(application: Application) : AndroidViewModel(application
 
     fun saveApiKey(key: String) {
         viewModelScope.launch {
+            DebugLogManager.info(TAG, "API key saved (${key.take(10)}...)")
             settingsDataStore.saveApiKey(key)
         }
     }
 
     fun clearApiKey() {
         viewModelScope.launch {
+            DebugLogManager.info(TAG, "API key cleared")
             settingsDataStore.clearApiKey()
         }
+    }
+
+    companion object {
+        private const val TAG = "ShoppingViewModel"
     }
 
     fun getExportText(): String {

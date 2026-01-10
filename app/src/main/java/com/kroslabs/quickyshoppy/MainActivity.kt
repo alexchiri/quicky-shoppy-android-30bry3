@@ -39,6 +39,7 @@ import com.google.accompanist.permissions.rememberPermissionState
 import com.google.gson.Gson
 import com.kroslabs.quickyshoppy.domain.model.ImportData
 import com.kroslabs.quickyshoppy.domain.model.ImportItem
+import com.kroslabs.quickyshoppy.ui.screens.debug.DebugLogsScreen
 import com.kroslabs.quickyshoppy.ui.screens.import_items.ImportScreen
 import com.kroslabs.quickyshoppy.ui.screens.ingredients.IngredientsScreen
 import com.kroslabs.quickyshoppy.ui.screens.main.MainScreen
@@ -219,6 +220,12 @@ fun QuickyShoppyNavigation(
         composable("settings") {
             SettingsScreen(
                 viewModel = viewModel,
+                onNavigateBack = { navController.popBackStack() },
+                onNavigateToDebugLogs = { navController.navigate("debug_logs") }
+            )
+        }
+        composable("debug_logs") {
+            DebugLogsScreen(
                 onNavigateBack = { navController.popBackStack() }
             )
         }
